@@ -1,0 +1,38 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.2'  // Android Gradle plugin
+        classpath 'com.google.gms:google-services:4.4.2'  // Google Services plugin for Firebase
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0'  // Kotlin Gradle plugin
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
+
+// Define Kotlin version globally
+ext {
+    kotlin_version = '2.1.10'  // Use a stable Kotlin version
+}

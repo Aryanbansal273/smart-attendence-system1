@@ -1,0 +1,257 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart'; // For date/time formatting
+import 'dart:async'; // For Timer
+
+
+class CheckInOutScreen extends StatefulWidget {
+  const CheckInOutScreen({super.key});
+
+  @override
+  State<CheckInOutScreen> createState() => _CheckInOutScreenState();
+}
+
+class _CheckInOutScreenState extends State<CheckInOutScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  bool isClockedIn = false; // Tracks clock-in state
+  DateTime? clockInTime; // Stores clock-in time
+  late Timer _timer; // Timer for real-time updates
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    )..repeat(reverse: true);
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    // Start a timer to update the UI every second
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {}); // Rebuild to update time
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _timer.cancel(); // Cancel the timer to prevent memory leaks
+    super.dispose();
+  }
+
+  void _handleClockIn() {
+    setState(() {
+      isClockedIn = true;
+      clockInTime = DateTime.now(); // Use real current time
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Clocked In Successfully!')),
+    );
+  }
+
+  void _handleClockOut() {
+    setState(() {
+      isClockedIn = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Clocked Out Successfully!')),
+    );
+    if (clockInTime != null) {
+      final duration = DateTime.now().difference(clockInTime!);
+      print('Worked for: ${duration.inHours}h ${duration.inMinutes % 60}m');
+    }
+    clockInTime = null;
+  }
+
+  String _getFormattedTime() {
+    return DateFormat('hh:mm a').format(DateTime.now()); // Real-time formatted
+  }
+
+  String _getFormattedDate() {
+    return DateFormat('EEEE, MMM d').format(DateTime.now()); // Real-time formatted
+  }
+
+  String _formatTime(DateTime time) {
+    return DateFormat('HH:mm').format(time); // 24-hour format for stats
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Current Time
+              Text(
+                _getFormattedTime(),
+                style: const TextStyle(
+                  fontSize: 64,
+                  fontWeight: FontWeight.w300,
+                  color: Colors.black87,
+                ),
+              ),
+              // Current Date
+              Text(
+                _getFormattedDate(),
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.grey[700],
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 40),
+
+              // Animated Clock In/Out Button
+              AnimatedBuilder(
+                animation: _scaleAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _scaleAnimation.value,
+                    child: GestureDetector(
+                      onTap: isClockedIn ? _handleClockOut : _handleClockIn,
+                      child: Container(
+                        width: 180,
+                        height: 180,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: isClockedIn
+                                ? [Colors.redAccent, Colors.orangeAccent] // Clock-out
+                                : [Colors.blueAccent, Colors.purpleAccent], // Clock-in
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (isClockedIn ? Colors.redAccent : Colors.blueAccent)
+                                  .withOpacity(0.3),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                isClockedIn ? Icons.logout : Icons.fingerprint,
+                                size: 60,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                isClockedIn ? 'Tap to Clock Out' : 'Tap to Clock In',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 30),
+
+              // Location Status
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'Location: Not in office reach',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40),
+
+              // Attendance Stats
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildStatCard(
+                    clockInTime != null ? _formatTime(clockInTime!) : '--:--',
+                    'Clock In',
+                    Colors.blueAccent,
+                  ),
+                  _buildStatCard(
+                    isClockedIn ? '--:--' : '18:20',
+                    'Clock Out',
+                    Colors.redAccent,
+                  ),
+                  _buildStatCard(
+                    clockInTime != null
+                        ? '${DateTime.now().difference(clockInTime!).inHours}h '
+                        '${DateTime.now().difference(clockInTime!).inMinutes % 60}m'
+                        : '0h 0m',
+                    'Working Hrs',
+                    Colors.green,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String value, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 10,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

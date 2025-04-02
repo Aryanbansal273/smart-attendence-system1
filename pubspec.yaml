@@ -1,0 +1,66 @@
+name: smartt_attendance
+description: "A new Flutter project."
+
+publish_to: 'none'
+
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.2
+
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+
+  cupertino_icons: ^1.0.8
+  firebase_core:
+  cloud_firestore:
+  firebase_auth: ^5.5.1
+  persistent_bottom_nav_bar: ^6.2.1
+  lucide_icons:
+  intl:
+  provider:
+  geolocator:
+  http:
+  firebase_crashlytics:
+  permission_handler:
+  geocoding:
+  flutter_swiper_null_safety:
+  shimmer:
+  fl_chart:
+  animate_do:
+  local_auth:
+  flutter_svg:
+  animated_icon: ^0.0.8
+  table_calendar:
+  image_picker: ^1.0.7
+  image_picker_android: ^0.8.12+22
+  flutter_plugin_android_lifecycle: ^2.0.7
+  supabase_flutter:
+  file_picker:
+
+
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+
+  flutter_lints: ^5.0.0
+
+
+flutter:
+
+
+  uses-material-design: true
+
+  assets:
+     - assets/png/
+     - assets/12.jpg
+     - assets/animations/
+     - assets/
+

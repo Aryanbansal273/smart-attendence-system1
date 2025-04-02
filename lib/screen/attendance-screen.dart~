@@ -1,0 +1,358 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:ui';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../models/bottom_sheet.dart';
+import 'history.dart';
+import 'widgets.dart';
+
+class AttendanceScreen extends StatefulWidget {
+  const AttendanceScreen({super.key});
+
+  @override
+  State<AttendanceScreen> createState() => _AttendanceScreenState();
+}
+
+class _AttendanceScreenState extends State<AttendanceScreen> with SingleTickerProviderStateMixin {
+  bool _isCheckedIn = false;
+  DateTime? _checkInDateTime;
+  String? _checkInTime;
+  String? _checkOutTime;
+  String? _totalHours;
+  bool _isShowingBottomSheet = false;
+  bool _isBlurred = false;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late String _userEmail;
+  late String _userId;
+
+  String _userName = 'User';
+  String? _profileImageUrl;
+
+  Position? _checkInLocation;
+  Position? _checkOutLocation;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimeUpdating();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
+    _animationController.forward();
+    _getUserAuthData();
+    _requestLocationPermission();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _startTimeUpdating() {
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) setState(() {});
+      return true;
+    });
+  }
+
+  Future<void> _requestLocationPermission() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        print('Location permissions are denied');
+        return;
+      }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      print('Location permissions are permanently denied');
+      return;
+    }
+  }
+
+  Future<Position> _getCurrentLocation() async {
+    return await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+  }
+
+  Future<void> _getUserAuthData() async {
+    final User? user = _auth.currentUser;
+    if (user != null) {
+      setState(() {
+        _userEmail = user.email ?? 'no-email';
+        _userId = user.uid;
+      });
+      await _initializeUserData();
+    } else {
+      print('User is not logged in');
+    }
+  }
+
+  Future<void> _initializeUserData() async {
+    try {
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(_userId).get();
+
+      if (!userDoc.exists) {
+        await _firestore.collection('users').doc(_userId).set({
+          'createdAt': FieldValue.serverTimestamp(),
+          'email': _userEmail,
+          'isEmailVerified': _auth.currentUser?.emailVerified ?? false,
+          'mobile': '',
+          'name': _auth.currentUser?.displayName ?? 'User',
+          'uid': _userId,
+        });
+
+        if (_auth.currentUser?.displayName != null) {
+          setState(() {
+            _userName = _auth.currentUser!.displayName!;
+          });
+        }
+      } else {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        setState(() {
+          _userName = userData['name'] ?? 'User';
+          _profileImageUrl = userData['profileImageUrl'];
+        });
+      }
+    } catch (e) {
+      print('Error initializing user data: $e');
+    }
+  }
+
+  Future<void> _saveAttendance(Map<String, dynamic> attendanceData) async {
+    try {
+      await _firestore
+          .collection('users')
+          .doc(_userId)
+          .collection('attendance')
+          .add(attendanceData);
+    } catch (e) {
+      print('Error saving attendance: $e');
+    }
+  }
+
+  void _handleCheckIn(DateTime punchTime) async {
+    HapticFeedback.mediumImpact();
+    final formattedTime = formatTime(punchTime);
+    _checkInLocation = await _getCurrentLocation();
+
+    setState(() {
+      _isCheckedIn = true;
+      _checkInDateTime = punchTime;
+      _checkInTime = formattedTime;
+      _checkOutTime = null;
+      _totalHours = null;
+      _isShowingBottomSheet = false;
+      _isBlurred = false;
+    });
+    _showAnimatedSnackBar("Check-in successful", "Checked in at $formattedTime", Icons.check_circle_rounded);
+  }
+
+  void _handleCheckOut(DateTime punchTime) async {
+    HapticFeedback.mediumImpact();
+    final formattedTime = formatTime(punchTime);
+    _checkOutLocation = await _getCurrentLocation();
+    String totalHours = '';
+    if (_checkInDateTime != null) {
+      Duration difference = punchTime.difference(_checkInDateTime!);
+      int hours = difference.inHours;
+      int minutes = difference.inMinutes.remainder(60);
+      totalHours = "${hours}h ${minutes}m";
+    }
+
+    final attendanceRecord = {
+      'checkInTime': _checkInTime ?? '--:--',
+      'checkInLocation': _checkInLocation != null
+          ? {'latitude': _checkInLocation!.latitude, 'longitude': _checkInLocation!.longitude}
+          : null,
+      'checkOutTime': formattedTime,
+      'checkOutLocation': _checkOutLocation != null
+          ? {'latitude': _checkOutLocation!.latitude, 'longitude': _checkOutLocation!.longitude}
+          : null,
+      'totalHours': totalHours,
+      'date': punchTime,
+      'status': _checkInDateTime != null && _checkInDateTime!.hour < 9 ? 'On Time' : 'Late',
+      'notes': '',
+      'breaks': [],
+    };
+
+    await _saveAttendance(attendanceRecord);
+
+    setState(() {
+      _checkOutTime = formattedTime;
+      _totalHours = totalHours;
+      _isCheckedIn = false;
+      _checkInDateTime = null;
+      _isShowingBottomSheet = false;
+      _isBlurred = false;
+      _checkInLocation = null;
+      _checkOutLocation = null;
+    });
+    _showAnimatedSnackBar("Check-out successful", "Total hours: $totalHours", Icons.access_time_filled_rounded);
+  }
+
+  void _showAnimatedSnackBar(String title, String message, IconData icon) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: _isCheckedIn
+                  ? [Colors.orange.shade800, Colors.red.shade700]
+                  : [Colors.green.shade600, Colors.teal.shade700],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: Colors.white.withOpacity(0.2),
+                child: Icon(icon, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                    ),
+                    Text(
+                      message,
+                      style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showLocationBottomSheet(bool isCheckIn) {
+    if (_isShowingBottomSheet) return;
+
+    setState(() {
+      _isShowingBottomSheet = true;
+      _isBlurred = true;
+    });
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => LocationBottomSheet(
+        onPunchIn: _handleCheckIn,
+        onPunchOut: isCheckIn ? null : _handleCheckOut,
+        isCheckIn: isCheckIn,
+      ),
+    ).whenComplete(() {
+      setState(() {
+        _isShowingBottomSheet = false;
+        _isBlurred = false;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    DateTime now = DateTime.now();
+    String formattedTimeStr = formatTime(now);
+    String formattedDateStr = formatDate(now);
+    return Scaffold(
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Colors.grey[50]!, Colors.grey[100]!, Colors.grey[200]!],
+                ),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: _isBlurred ? 5.0 : 0.0, sigmaY: _isBlurred ? 5.0 : 0.0),
+                child: SafeArea(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AttendanceHeader(
+                          isCheckedIn: _isCheckedIn,
+                          userName: _userName,
+                          profileImageUrl: _profileImageUrl,
+                        ),
+                        const SizedBox(height: 30),
+                        TimeDisplay(
+                          currentTime: now,
+                          formattedTime: formattedTimeStr,
+                          formattedDate: formattedDateStr,
+                        ),
+                        const SizedBox(height: 40),
+                        Center(
+                          child: NeumorphicCheckInButton(
+                            isCheckedIn: _isCheckedIn,
+                            onTap: () => _showLocationBottomSheet(_isCheckedIn ? false : true),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                        AttendanceStats(
+                          isCheckedIn: _isCheckedIn,
+                          checkInTime: _checkInTime,
+                          checkOutTime: _checkOutTime,
+                          totalHours: _totalHours,
+                        ),
+                        const SizedBox(height: 20),
+                        Center(),
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

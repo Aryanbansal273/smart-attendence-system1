@@ -1,0 +1,2 @@
+/Users/deepankarsingh/AndroidStudioProjects/smartt_attendance/android/app/.cxx/Debug/4y2n336y/armeabi-v7a/CMakeFiles/edit_cache.dir
+/Users/deepankarsingh/AndroidStudioProjects/smartt_attendance/android/app/.cxx/Debug/4y2n336y/armeabi-v7a/CMakeFiles/rebuild_cache.dir

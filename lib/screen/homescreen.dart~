@@ -1,0 +1,268 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart'; // For location (add to pubspec.yaml)
+import 'package:google_maps_flutter/google_maps_flutter.dart'; //For map (add to pubspec.yaml)
+import 'package:persistent_bottom_nav_bar/persistent_bottom_nav_bar.dart';
+
+import '../bottom_navigation_bar.dart';
+//import 'package:your_project/check_in_out_screen.dart'; // Replace with your actual path
+
+class HomeScreen extends StatefulWidget {
+  final String userName;
+  final String userRole; // "Student", "Teacher", "Admin"
+
+  const HomeScreen({Key? key, required this.userName, required this.userRole}) : super(key: key);
+
+  @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  DateTime _currentTime = DateTime.now();
+  bool _isCheckedIn = false;
+  DateTime? _checkInTime;
+  DateTime? _checkOutTime;
+  Position? _currentPosition; // Store the user's position
+  GoogleMapController? _mapController;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _getCurrentTime();
+    _getLocation(); // Get location on startup (handle permissions)
+    // Ideally, you'd load check-in/out status from persistent storage (e.g., Shared Preferences) here.
+    // For this example, I'm using simple boolean flags.
+  }
+
+  Future<void> _getLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Test if location services are enabled.
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Location services are not enabled, handle this case.  Maybe show a dialog.
+      print('Location services are disabled.');
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // Permissions are denied, handle this case.  Maybe show a dialog.
+        print('Location permissions are denied');
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // Permissions are denied forever, handle appropriately.
+      print('Location permissions are permanently denied, we cannot request permissions.');
+      return;
+    }
+
+    // When we reach here, permissions are granted and we can get the position.
+    try {
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      setState(() {
+        _currentPosition = position;
+      });
+      if (_mapController != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+            15, // Adjust zoom level as needed
+          ),
+        );
+      }
+    } catch (e) {
+      print("Error getting location: $e");
+      // Handle location retrieval errors.
+    }
+  }
+
+  void _getCurrentTime() {
+    setState(() {
+      _currentTime = DateTime.now();
+    });
+    // You could use a Timer to update the time periodically (e.g., every second).
+    //  Timer.periodic(Duration(seconds: 1), (timer) {
+    //   if (mounted) { // Important to check if the widget is still mounted
+    //      _getCurrentTime();
+    //    }
+    //  });
+  }
+
+  void _handleCheckInOut() {
+    // This function simulates check-in/out.  Replace with your actual logic.
+    setState(() {
+      if (!_isCheckedIn) {
+        _checkInTime = DateTime.now();
+        _isCheckedIn = true;
+        _checkOutTime = null; // Clear check-out time if checking in again
+      } else {
+        _checkOutTime = DateTime.now();
+        _isCheckedIn = false;
+      }
+    });
+
+    // You would save the check-in/out status and times to persistent storage here.
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+
+    // If we already have the position, move the camera.
+    if (_currentPosition != null) {
+      controller.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+          15, // Adjust the zoom level as you see fit
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(
+          title: const Text('Home'),
+        ),
+        body: SingleChildScrollView( // Important for avoiding overflow with keyboard
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Welcome Message
+              Text(
+                'Welcome, ${widget.userName}!',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+
+              // User Role
+              Text(
+                'Role: ${widget.userRole}',
+                style: const TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 8),
+
+              // Date and Time
+              Text(
+                DateFormat('EEEE, MMMM d, y - hh:mm a').format(_currentTime),
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 24),
+
+              // Check In/Out Button
+              Center(
+                child: ElevatedButton(
+                  onPressed: _handleCheckInOut,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue, // Change color as needed
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                    textStyle: const TextStyle(fontSize: 20),
+                  ),
+                  child: Text(_isCheckedIn ? 'Check Out' : 'Check In'),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Check-in/Out Time Display
+              if (_checkInTime != null)
+                Center(
+                  child: Text(
+                    'Checked In: ${DateFormat('hh:mm a').format(_checkInTime!)}',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              if (_checkOutTime != null)
+                Center(
+                  child: Text(
+                    'Checked Out: ${DateFormat('hh:mm a').format(_checkOutTime!)}',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              const SizedBox(height: 24),
+              // Location Map (Conditional)
+              if (_currentPosition != null)
+                SizedBox(
+                    height: 200, // Set a fixed height for the map
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(15.0), // Rounded corners
+                      child: GoogleMap(
+                        onMapCreated: _onMapCreated,
+
+                        initialCameraPosition: CameraPosition(
+                          target: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                          zoom: 15,
+                        ),
+                        markers: {
+                          Marker(
+                            markerId: const MarkerId('currentLocation'),
+                            position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                            infoWindow: const InfoWindow(title: 'Your Location'),
+                          )
+                        },
+                      ),
+                    )
+                ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: buildNavBar(context)
+    );
+  }
+  PersistentTabView buildNavBar(BuildContext context) {
+    return PersistentTabView(
+      context,
+
+      screens: _buildScreens(),
+      items: _navBarsItems(),
+      navBarStyle: NavBarStyle.style15, // Floating center button style
+      backgroundColor: Colors.white,
+    );
+  }
+  List<Widget> _buildScreens() {
+    return [
+      //Keep the other screens empty, focus is on the HomeScreen.
+      const HomeScreen(userName: '', userRole: '',),
+      Container(),
+      Container(),
+      Container(),
+
+    ];
+  }
+
+  List<PersistentBottomNavBarItem> _navBarsItems() {
+    return [
+      PersistentBottomNavBarItem(
+        icon: const Icon(Icons.home),
+        title: ("Home"),
+        activeColorPrimary: Colors.blue,
+        inactiveColorPrimary: Colors.grey,
+      ),
+      PersistentBottomNavBarItem(
+        icon: const Icon(Icons.search),
+        title: ("Search"),
+        activeColorPrimary: Colors.blue,
+        inactiveColorPrimary: Colors.grey,
+      ),
+      PersistentBottomNavBarItem(
+        icon: const Icon(Icons.add),
+        title: ("Add"),
+        activeColorPrimary: Colors.blue,
+        inactiveColorPrimary: Colors.grey,
+      ),
+      PersistentBottomNavBarItem(
+        icon: const Icon(Icons.settings),
+        title: ("Settings"),
+        activeColorPrimary: Colors.blue,
+        inactiveColorPrimary: Colors.grey,
+      ),
+    ];
+  }
+}
